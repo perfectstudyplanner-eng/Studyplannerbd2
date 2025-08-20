@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Friend, FriendRequest, StudySession, GroupMessage } from '../types';
 import { useAuth } from './AuthContext';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseReady } from '../lib/supabase';
 
 interface FriendsContextType {
   friends: Friend[];
@@ -49,6 +49,11 @@ export const FriendsProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const loadFriendsData = async () => {
     if (!user) return;
+    
+    if (!isSupabaseReady) {
+      console.warn('Supabase is not configured properly. Skipping data load.');
+      return;
+    }
     
     setIsLoading(true);
     try {
