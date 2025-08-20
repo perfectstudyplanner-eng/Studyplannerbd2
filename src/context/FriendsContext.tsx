@@ -57,9 +57,14 @@ export const FriendsProvider: React.FC<{ children: React.ReactNode }> = ({ child
     
     setIsLoading(true);
     try {
+      // Load friends and friend requests first
       await Promise.all([
         loadFriends(),
-        loadFriendRequests(),
+        loadFriendRequests()
+      ]);
+      
+      // Then load study sessions and group messages after friends are loaded
+      await Promise.all([
         loadStudySessions(),
         loadGroupMessages()
       ]);
@@ -169,7 +174,18 @@ export const FriendsProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const loadStudySessions = async () => {
     if (!user) return;
 
-    const friendIds = friends.map(f => f.friend_id);
+    // Get fresh friends data to ensure we have the latest friend list
+    const { data: friendsData, error: friendsError } = await supabase
+      .from('friends')
+      .select('friend_id')
+      .eq('user_id', user.id);
+
+    if (friendsError) {
+      console.error('Error loading friends for study sessions:', friendsError);
+      return;
+    }
+
+    const friendIds = friendsData?.map(f => f.friend_id) || [];
     const allUserIds = [user.id, ...friendIds];
 
     const { data: sessionsData, error } = await supabase
@@ -188,7 +204,7 @@ export const FriendsProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     // Get user details separately
-    const userIds = sessionsData.map(s => s.user_id);
+    const userIds = [...new Set(sessionsData.map(s => s.user_id))];
     const { data: usersData, error: usersError } = await supabase
       .from('users')
       .select('id, name')
@@ -202,10 +218,19 @@ export const FriendsProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Map user details to sessions data
     const sessionsWithDetails = sessionsData.map(s => {
       const sessionUser = usersData?.find(u => u.id === s.user_id);
+      // If user is not found in users table, try to get name from friends list or use email
+      let userName = sessionUser?.name;
+      if (!userName && s.user_id === user.id) {
+        userName = user.user_metadata?.name || user.email?.split('@')[0] || 'You';
+      } else if (!userName) {
+        const friend = friends.find(f => f.friend_id === s.user_id);
+        userName = friend?.friend_name || 'Unknown User';
+      }
+      
       return {
         id: s.id,
         user_id: s.user_id,
-        user_name: sessionUser?.name || 'Unknown',
+        user_name: userName || 'Unknown',
         status: s.status as 'studying' | 'break' | 'offline',
         subject: s.subject,
         started_at: s.started_at,
@@ -250,10 +275,19 @@ export const FriendsProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Map user details to messages data
     const messagesWithDetails = messagesData.map(m => {
       const messageUser = usersData?.find(u => u.id === m.user_id);
+      // If user is not found in users table, try to get name from friends list or use email
+      let userName = messageUser?.name;
+      if (!userName && m.user_id === user.id) {
+        userName = user.user_metadata?.name || user.email?.split('@')[0] || 'You';
+      } else if (!userName) {
+        const friend = friends.find(f => f.friend_id === m.user_id);
+        userName = friend?.friend_name || 'Unknown User';
+      }
+      
       return {
         id: m.id,
         user_id: m.user_id,
-        user_name: messageUser?.name || 'Unknown',
+        user_name: userName || 'Unknown',
         message: m.message,
         mentions: m.mentions || [],
         created_at: m.created_at
