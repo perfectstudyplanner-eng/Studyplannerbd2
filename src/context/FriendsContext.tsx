@@ -333,15 +333,26 @@ export const FriendsProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       if (requestError || !request) throw requestError;
 
-      // Create friendship (both directions)
-      const { error: friendError } = await supabase
+      // Check if friendship already exists
+      const { data: existingFriendship, error: checkError } = await supabase
         .from('friends')
-        .insert([
-          { user_id: request.receiver_id, friend_id: request.sender_id },
-          { user_id: request.sender_id, friend_id: request.receiver_id }
-        ]);
+        .select('id')
+        .or(`and(user_id.eq.${request.receiver_id},friend_id.eq.${request.sender_id}),and(user_id.eq.${request.sender_id},friend_id.eq.${request.receiver_id})`)
+        .limit(1);
 
-      if (friendError) throw friendError;
+      if (checkError) throw checkError;
+
+      // Only create friendship if it doesn't already exist
+      if (!existingFriendship || existingFriendship.length === 0) {
+        const { error: friendError } = await supabase
+          .from('friends')
+          .insert([
+            { user_id: request.receiver_id, friend_id: request.sender_id },
+            { user_id: request.sender_id, friend_id: request.receiver_id }
+          ]);
+
+        if (friendError) throw friendError;
+      }
 
       // Update request status
       const { error: updateError } = await supabase
